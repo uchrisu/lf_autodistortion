@@ -11,8 +11,6 @@
 #     q: quit - cancel the program
 #     others: redo the last image
 
-
-
 import numpy as np
 import cv2
 from scipy import stats
@@ -21,7 +19,7 @@ import glob
 import dist
 import time
 import subprocess
-# from matplotlib import pyplot as plt
+import sys
 
 
 def str_to_float(string):
@@ -31,80 +29,6 @@ def str_to_float(string):
         num, denom = string.split('/')
         return float(num) / float(denom)
 
-
-def find_lines(img: np.ndarray, num_lines=2): # deprecated
-    mouse_x = -1
-    mouse_y = -1
-
-    def mouse_callback(event, x, y, flags, param):
-        nonlocal mouse_x
-        nonlocal mouse_y
-        # print('MOUSE')
-        if event == cv2.EVENT_LBUTTONDOWN:
-            mouse_x = x
-            mouse_y = y
-            print(x, ' ', y)
-
-    num_lines_done = 0
-    sizex = img.shape[1]
-    sizey = img.shape[0]
-    lines_y = np.zeros((num_lines, sizex))
-
-    while num_lines_done < num_lines:
-        print('Line ', num_lines_done)
-        mouse_x = -1
-        mouse_y = -1
-
-        sobely = cv2.Sobel(img, cv2.CV_64F, 0, 1, ksize=11)
-        sobely = cv2.Sobel(sobely, cv2.CV_64F, 0, 1, ksize=11)
-        sobely = sobely[:, :, 0] + sobely[:, :, 1] + sobely[:, :, 2]
-        sobely[sobely < 0] = 0
-        sobely = sobely / sobely.max()
-
-        cv2.namedWindow('image', cv2.WINDOW_NORMAL)
-        cv2.imshow('image', img)
-        cv2.resizeWindow('image', 1800, 900)
-        cv2.setMouseCallback('image', mouse_callback)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-
-        print('Point: ', mouse_x, ', ', mouse_y)
-
-        if mouse_y >= 0 and mouse_x >= 0:
-            y = mouse_y
-            lines_img = np.zeros(sobely.shape)
-            for x in range(sizex):
-                lines_y[num_lines_done, x] = y
-                lines_img[y, x] = 1.0
-                yplus = y + 1
-                yminus = y - 1
-                if yplus >= sizey:
-                    yplus = sizey - 1
-                if yminus < 0:
-                    yminus = 0
-                if sobely[yplus, x] > sobely[y, x]:
-                    y = yplus
-                if sobely[yminus, x] > sobely[y, x]:
-                    y = yminus
-
-            pimg = np.zeros(img.shape)
-            pimg[:, :, 0] = (img[:, :, 0] + img[:, :, 1] + img[:, :, 2]) / (3 * 255)
-            pimg[:, :, 1] = (img[:, :, 0] + img[:, :, 1] + img[:, :, 2]) / (3 * 255)
-            pimg[:, :, 2] = (img[:, :, 0] + img[:, :, 1] + img[:, :, 2]) / (3 * 255)
-            pimg[:, :, 2] = pimg[:, :, 2] + lines_img
-
-            cv2.namedWindow('image2', cv2.WINDOW_NORMAL)
-            cv2.imshow('image2', pimg)
-            cv2.resizeWindow('image2', 2000, 1000)
-            key = cv2.waitKey(0)
-            cv2.destroyAllWindows()
-            if key & 0xFF == ord('q'):
-                lines_y[0, 0] = -1
-                return lines_y
-            elif key & 0xFF != ord('r'):
-                num_lines_done = num_lines_done + 1
-
-    return lines_y
 
 def find_lines_new(img: np.ndarray, num_lines=2):
     mouse_x = -1
@@ -125,8 +49,8 @@ def find_lines_new(img: np.ndarray, num_lines=2):
     lines_y = np.zeros((num_lines, sizex), dtype=int) - 1
     sobely = cv2.Sobel(img, cv2.CV_64F, 0, 2, ksize=11)
     # sobely = cv2.Sobel(sobely, cv2.CV_64F, 0, 1, ksize=11)
-    sobely = sobely[:, :, 0] + sobely[:, :, 1] + sobely[:, :, 2]
-    sobely[sobely < 0] = -sobely[sobely < 0]
+    sobely = np.abs(sobely[:, :, 0]) + np.abs(sobely[:, :, 1]) + np.abs(sobely[:, :, 2])
+    # sobely[sobely < 0] = -sobely[sobely < 0]
     sobely = sobely / sobely.max()
 
     lines_img = np.zeros(img.shape)
@@ -136,16 +60,29 @@ def find_lines_new(img: np.ndarray, num_lines=2):
     cv2.imshow('DrawLines', lines_img)
     cv2.resizeWindow('DrawLines', 2000, 1000)
     cv2.setMouseCallback('DrawLines', mouse_callback)
+    cv2.setWindowTitle('DrawLines',
+                       'Draw Lines. 1,2: select 1st/2nd line, q: done, s,r: start/remove line from here (last click)')
 
     active = True
     while active:
         lines_img = img.copy() # can be improved in speed!
         for line in range(num_lines):
             for x in range(sizex):
-                if lines_y[line,x] >= 0:
-                    lines_img[lines_y[line,x],x,0] = 0.0
-                    lines_img[lines_y[line, x], x, 1] = 0.0
-                    lines_img[lines_y[line, x], x, 2] = 255
+                if lines_y[line, x] >= 0:
+                    y = lines_y[line, x]
+                    if x % 2 == 0:
+                        lines_img[y - 5:y + 6, x, 0] //= 2
+                        lines_img[y - 5:y + 6, x, 1] //= 2
+                        lines_img[y - 5:y + 6, x, 2] //= 2
+                        lines_img[y - 5:y + 6, x, 1] += 127
+                    if x % 2 == 1:
+                        lines_img[y, x, 0] = 0.0
+                        lines_img[y, x, 1] = 255
+                        lines_img[y, x, 2] = 0.0
+                    else:
+                        lines_img[y, x, 0] = 255
+                        lines_img[y, x, 1] = 0.0
+                        lines_img[y, x, 2] = 0.0
         cv2.imshow('DrawLines', lines_img)
         key = cv2.waitKey(100)
         if key & 0xFF == ord('q'):
@@ -178,7 +115,7 @@ def find_lines_new(img: np.ndarray, num_lines=2):
     return lines_y
 
 
-def min_dist(vals): # deprecated
+def min_dist(vals):  # deprecated
     global xdi
     global ydi
     global width
@@ -259,7 +196,6 @@ while active:
     # TODO: what happens if no exiv2 available? 
 
     l_y = find_lines_new(image, 2)
-    
    
     width = image.shape[1]
     height = image.shape[0]
@@ -275,8 +211,15 @@ while active:
             if l_y[line, x] >= 0:
                 points[line].append([x, l_y[line, x]])
 
-    initial_guess = np.array([0.01, 0.01, 0.01])
-    #initial_guess = np.array([0.0266783285002862, -0.0864150044158616, 0.0509941823684105])
+    if len(points[0]) < 10 or len(points[1]) < 10:
+        key = input('Error: Not enough Points, retry? (y/n) ')
+        if key == 'y' or key == 'Y':
+            continue
+        sys.exit()
+
+    print('Calculating. Please wait...')
+
+    #initial_guess = np.array([0.01, 0.01, 0.01])
 
     #res = optimize.minimize(min_dist, initial_guess)
 
@@ -284,7 +227,7 @@ while active:
 
     #res = optimize.basinhopping(min_dist_new, [(-1,1),(-1,1),])
     
-    # Two step approach seems to work quit good
+    # Two step approach seems to work quite good
 
     bounds = [(-1, 1), (-1, 1), (-1, 1)]
 
@@ -327,6 +270,7 @@ while active:
     cv2.namedWindow('Check', cv2.WINDOW_NORMAL)
     cv2.imshow('Check', img_lines / 255)
     cv2.resizeWindow('Check', 1800, 900)
+    cv2.setWindowTitle('Check', 'Check Lines. o: line is okay, r: reject results, q: quit/abort program')
     key = cv2.waitKey(0)
     cv2.destroyAllWindows()
     if key & 0xFF == ord('q'):
