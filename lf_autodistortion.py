@@ -467,7 +467,7 @@ def main():
         if key & 0xFF == ord('q'):
             active = False
         elif key & 0xFF == ord('o'):
-            result_str = 'distortion(' + str(focallength) + 'mm) = ' + str(a) + ', ' + str(b) + ', ' + str(c) + '\n'
+            result_str = 'distortion(' + str(focallength) + 'mm) = ' + str(round(a,7)) + ', ' + str(round(b,7)) + ', ' + str(round(c,7)) + '\n'
             file_results.write(result_str)
             file_index += 1
             if file_index >= len(file_list):
