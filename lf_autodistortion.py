@@ -12,7 +12,6 @@
 #     others: redo the last image
 
 import numpy as np
-import numpy.matlib
 import cv2
 from scipy import stats
 from scipy import optimize
@@ -22,7 +21,7 @@ import subprocess
 import sys
 
 
-###### Distortion functions #######
+# -------- Distortion functions -------- #
 
 def distort(x, y, width, height, a, b, c):
     r_full = height/2  # np.hypot(width, height)/2
@@ -112,8 +111,8 @@ def image_undistort(img: np.ndarray, a, b, c):
     yuv = np.arange(height)
     xuv_ = (xuv - width / 2) / r_full
     yuv_ = (yuv - height / 2) / r_full
-    xum_ = np.matlib.repmat(xuv_, height, 1)
-    yum_ = np.matlib.repmat(yuv_.reshape(height,1), 1, width)
+    xum_ = np.tile(xuv_, (height, 1))
+    yum_ = np.tile(yuv_.reshape(height, 1), (1, width))
     ru = np.hypot(xum_, yum_)
     ru2 = np.multiply(ru, ru)
     factor = (a * np.multiply(ru2, ru) + b * ru2 + c * ru + (1 - a - b - c))
@@ -189,8 +188,6 @@ def find_lines_sobel(img: np.ndarray, num_lines=2):
     sobely = np.abs(sobely[:, :, 0]) + np.abs(sobely[:, :, 1]) + np.abs(sobely[:, :, 2])
     # sobely[sobely < 0] = -sobely[sobely < 0]
     sobely = sobely / sobely.max()
-
-    lines_img = np.zeros(img.shape)
 
     lines_img = img.copy()
     cv2.namedWindow('DrawLines', cv2.WINDOW_NORMAL)
@@ -270,8 +267,6 @@ def find_lines_xcorr(img: np.ndarray, num_lines=2):
     sizey = img.shape[0]
     lines_y = np.zeros((num_lines, sizex), dtype=int) - 1
 
-    lines_img = np.zeros(img.shape)
-
     lines_img = img.copy()
     cv2.namedWindow('DrawLines', cv2.WINDOW_NORMAL)
     cv2.imshow('DrawLines', lines_img)
@@ -339,34 +334,7 @@ def find_lines_xcorr(img: np.ndarray, num_lines=2):
     return lines_y
 
 
-def min_dist(vals):  # deprecated
-    global xdi
-    global ydi
-    global width
-    global height
-    a = vals[0]
-    b = vals[1]
-    c = vals[2]
-    print('Vals:', a, b, c)
-    yui = np.zeros([ydi.shape[1], ydi.shape[0]])
-    xui = np.zeros([ydi.shape[1], ydi.shape[0]])
-    for v0 in range(ydi.shape[0]):
-        for v1 in range(ydi.shape[1]):
-            xu, yu = undistort(xdi[v1],ydi[v0,v1],width,height,a,b,c)
-            xui[v1,v0] = xu
-            yui[v1,v0] = yu
-    errorsum = 0.0
-    for linenum in range(ydi.shape[0]):
-        la, lb, r_value, p_value, std_err = stats.linregress(xui[:,linenum], yui[:,linenum])
-        errorsum = errorsum + std_err
-    print('Results: ', 1000*errorsum)
-    return 1000 * errorsum
-
-
-def min_dist_new(vals):
-    global points
-    global width
-    global height
+def min_dist_new(vals, width, height, points):
     a = vals[0]
     b = vals[1]
     c = vals[2]
@@ -376,8 +344,6 @@ def min_dist_new(vals):
         a_points = np.array(points[linenum]).transpose()
         xdi = a_points[0,:]
         ydi = a_points[1,:]
-        xui = np.zeros(xdi.shape)
-        yui = np.zeros(ydi.shape)
         xu_list = []
         yu_list = []
         xui, yui = undistort_vec(xdi,ydi,width,height,a,b,c)
@@ -402,17 +368,7 @@ def min_dist_new(vals):
     return 1000 * errorsum
 
 
-points = []
-width = 0
-height = 0
-xdi = np.array([])
-ydi = np.array([])
-
-
 def main():
-    global width
-    global height
-    global points
     file_list = glob.glob('*.tiff')
     file_list.sort()
 
@@ -467,12 +423,12 @@ def main():
         bounds = [(-1, 1), (-1, 1), (-1, 1)]
 
         t1 = time.time()
-        res = optimize.dual_annealing(min_dist_new, bounds)
+        res = optimize.dual_annealing(min_dist_new, bounds, args=(width, height, points))
         t2 = time.time()
         print('Optimization time 1: ', t2-t1)
 
         t1 = time.time()
-        res = optimize.least_squares(min_dist_new, res.x)
+        res = optimize.least_squares(min_dist_new, res.x, args=(width, height, points))
         t2 = time.time()
         print('Optimization time 2: ', t2 - t1)
 
@@ -509,7 +465,7 @@ def main():
         key = cv2.waitKey(0)
         cv2.destroyAllWindows()
         if key & 0xFF == ord('q'):
-            active =  False
+            active = False
         elif key & 0xFF == ord('o'):
             result_str = 'distortion(' + str(focallength) + 'mm) = ' + str(a) + ', ' + str(b) + ', ' + str(c) + '\n'
             file_results.write(result_str)
